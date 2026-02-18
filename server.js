@@ -1,8 +1,15 @@
 import { createServer } from 'http';
 import { spawn } from 'child_process';
-import { readFile, unlink } from 'fs/promises';
+import { readFile, unlink, writeFile } from 'fs/promises';
 import { createReadStream } from 'fs';
 import { randomUUID } from 'crypto';
+
+// Write cookies from env variable on startup
+if (process.env.COOKIES_BASE64) {
+  const buf = Buffer.from(process.env.COOKIES_BASE64, 'base64');
+  await writeFile('cookies.txt', buf);
+  console.log('✅ cookies.txt written from env');
+}
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:3000');
