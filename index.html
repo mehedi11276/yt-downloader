@@ -79,6 +79,8 @@
   </div>
 
   <script>
+    let formats = [];
+
     async function fetchFormats() {
       const url = document.getElementById('urlInput').value.trim();
       if (!url) return;
@@ -97,12 +99,14 @@
         });
         const data = await res.json();
 
+        formats = data.formats;
+
         document.getElementById('thumbnail').src = data.thumbnail;
         document.getElementById('title').textContent = data.title;
 
         const select = document.getElementById('formatSelect');
-        select.innerHTML = data.formats.map(f =>
-          `<option value="${f.height}" data-height="${f.height}">${f.label}</option>`
+        select.innerHTML = data.formats.map((f, i) =>
+          `<option value="${i}">${f.label}</option>`
         ).join('');
 
         document.getElementById('info').style.display = 'block';
@@ -116,12 +120,11 @@
     }
 
     function download() {
-      const url = document.getElementById('urlInput').value.trim();
-      const select = document.getElementById('formatSelect');
-      const height = select.value;
-      document.getElementById('status').textContent = 'Downloading... this may take a moment!';
-      window.location.href = `/download?url=${encodeURIComponent(url)}&height=${height}`;
-      setTimeout(() => document.getElementById('status').textContent = '', 5000);
+      const i = document.getElementById('formatSelect').value;
+      const directUrl = formats[i].url;
+      // Open direct YouTube CDN URL — browser downloads it directly
+      window.open(directUrl, '_blank');
+      document.getElementById('status').textContent = 'Opening download link...';
     }
   </script>
 </body>

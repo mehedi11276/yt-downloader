@@ -1,7 +1,6 @@
 import { createServer } from 'http';
 import { spawn } from 'child_process';
-import { readFile, unlink, writeFile } from 'fs/promises';
-import { createReadStream } from 'fs';
+import { readFile, writeFile } from 'fs/promises';
 import { randomUUID } from 'crypto';
 
 // Write cookies from env variable on startup
@@ -9,13 +8,15 @@ if (process.env.COOKIES_BASE64) {
   const buf = Buffer.from(process.env.COOKIES_BASE64, 'base64');
   await writeFile('cookies.txt', buf);
   console.log('✅ cookies.txt written from env, size:', buf.length, 'bytes');
-  console.log('📄 First 100 chars:', buf.toString('utf8').slice(0, 100));
 } else {
   console.log('⚠️ No COOKIES_BASE64 env variable found!');
 }
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:3000');
+
+  // CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
 
   if (req.method === 'GET' && url.pathname === '/') {
     const html = await readFile('index.html');
@@ -32,10 +33,10 @@ const server = createServer(async (req, res) => {
 
       const ytdlp = spawn('yt-dlp', [
         '-J',
-        '-v',
+        '--no-warnings',
         '--no-playlist',
         '--cookies', 'cookies.txt',
-        '--extractor-args', 'youtube:player_client=ios,web',
+        '--extractor-args', 'youtube:player_client=web',
         videoUrl
       ]);
       let data = '';
@@ -54,10 +55,10 @@ const server = createServer(async (req, res) => {
         try {
           const json = JSON.parse(data);
           const videoFormats = json.formats
-            .filter(f => f.height && f.vcodec !== 'none')
+            .filter(f => f.height && f.vcodec !== 'none' && f.url)
             .sort((a, b) => b.height - a.height)
             .filter((f, i, arr) => arr.findIndex(x => x.height === f.height) === i)
-            .map(f => ({ height: f.height, label: getLabel(f.height, f.ext.toUpperCase()) }));
+            .map(f => ({ height: f.height, label: getLabel(f.height, f.ext.toUpperCase()), url: f.url }));
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ title: json.title, thumbnail: json.thumbnail, formats: videoFormats }));
         } catch(e) {
@@ -65,48 +66,6 @@ const server = createServer(async (req, res) => {
           res.end(JSON.stringify({ error: e.message }));
         }
       });
-    });
-    return;
-  }
-
-  if (req.method === 'GET' && url.pathname === '/download') {
-    const videoUrl = url.searchParams.get('url');
-    const height = url.searchParams.get('height');
-    if (!videoUrl) { res.writeHead(400); return res.end('No URL'); }
-
-    const tmpFile = `tmp_${randomUUID()}.mp4`;
-    const format = height
-      ? `bestvideo[height<=${height}]+bestaudio/best[height<=${height}]`
-      : 'bestvideo+bestaudio';
-
-    const ytdlp = spawn('yt-dlp', [
-      '-f', format,
-      '--no-warnings',
-      '--no-playlist',
-      '--merge-output-format', 'mp4',
-      '--extractor-args', 'youtube:player_client=ios,web',
-      '--cookies', 'cookies.txt',
-      '-o', tmpFile,
-      videoUrl
-    ]);
-
-    ytdlp.stderr.on('data', (d) => console.log(d.toString()));
-
-    ytdlp.on('close', async () => {
-      try {
-        res.writeHead(200, {
-          'Content-Type': 'video/mp4',
-          'Content-Disposition': 'attachment; filename="video.mp4"',
-        });
-        const stream = createReadStream(tmpFile);
-        stream.pipe(res);
-        stream.on('close', async () => {
-          await unlink(tmpFile).catch(() => {});
-        });
-      } catch(e) {
-        res.writeHead(500);
-        res.end('Download failed');
-      }
     });
     return;
   }
