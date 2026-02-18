@@ -9,6 +9,7 @@ if (process.env.COOKIES_BASE64) {
   const buf = Buffer.from(process.env.COOKIES_BASE64, 'base64');
   await writeFile('cookies.txt', buf);
   console.log('✅ cookies.txt written from env, size:', buf.length, 'bytes');
+  console.log('📄 First 100 chars:', buf.toString('utf8').slice(0, 100));
 } else {
   console.log('⚠️ No COOKIES_BASE64 env variable found!');
 }
