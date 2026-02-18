@@ -59,7 +59,9 @@ const server = createServer(async (req, res) => {
         const videoId = extractVideoId(videoUrl);
         if (!videoId) { res.writeHead(400); return res.end(JSON.stringify({ error: 'Invalid URL' })); }
 
+        console.log('🔍 Fetching info for:', videoId);
         const info = await yt.getBasicInfo(videoId);
+        console.log('📦 Got info, streaming_data:', !!info.streaming_data);
         const streamingData = info.streaming_data;
 
         if (!streamingData) {
