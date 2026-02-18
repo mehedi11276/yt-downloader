@@ -35,7 +35,7 @@ const server = createServer(async (req, res) => {
         '-v',
         '--no-playlist',
         '--cookies', 'cookies.txt',
-        '--extractor-args', 'youtube:player_client=android',
+        '--extractor-args', 'youtube:player_client=ios,web',
         videoUrl
       ]);
       let data = '';
@@ -84,7 +84,7 @@ const server = createServer(async (req, res) => {
       '--no-warnings',
       '--no-playlist',
       '--merge-output-format', 'mp4',
-      '--extractor-args', 'youtube:player_client=android',
+      '--extractor-args', 'youtube:player_client=ios,web',
       '--cookies', 'cookies.txt',
       '-o', tmpFile,
       videoUrl
