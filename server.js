@@ -8,7 +8,9 @@ import { randomUUID } from 'crypto';
 if (process.env.COOKIES_BASE64) {
   const buf = Buffer.from(process.env.COOKIES_BASE64, 'base64');
   await writeFile('cookies.txt', buf);
-  console.log('✅ cookies.txt written from env');
+  console.log('✅ cookies.txt written from env, size:', buf.length, 'bytes');
+} else {
+  console.log('⚠️ No COOKIES_BASE64 env variable found!');
 }
 
 const server = createServer(async (req, res) => {
