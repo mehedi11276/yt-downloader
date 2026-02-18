@@ -1,21 +1,54 @@
 import { createServer } from 'http';
-import { spawn } from 'child_process';
-import { readFile, writeFile } from 'fs/promises';
-import { randomUUID } from 'crypto';
+import { readFile } from 'fs/promises';
 
-// Write cookies from env variable on startup
-if (process.env.COOKIES_BASE64) {
-  const buf = Buffer.from(process.env.COOKIES_BASE64, 'base64');
-  await writeFile('cookies.txt', buf);
-  console.log('✅ cookies.txt written from env, size:', buf.length, 'bytes');
-} else {
-  console.log('⚠️ No COOKIES_BASE64 env variable found!');
+const INNERTUBE_API_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
+const INNERTUBE_CLIENT = {
+  clientName: 'ANDROID',
+  clientVersion: '19.09.37',
+  androidSdkVersion: 30,
+  userAgent: 'com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip'
+};
+
+async function getVideoInfo(videoId) {
+  const res = await fetch(`https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': INNERTUBE_CLIENT.userAgent,
+      'X-YouTube-Client-Name': '3',
+      'X-YouTube-Client-Version': INNERTUBE_CLIENT.clientVersion,
+    },
+    body: JSON.stringify({
+      videoId,
+      context: {
+        client: INNERTUBE_CLIENT
+      }
+    })
+  });
+  return res.json();
+}
+
+function extractVideoId(url) {
+  try {
+    const u = new URL(url);
+    return u.searchParams.get('v') || u.pathname.split('/').pop();
+  } catch {
+    return null;
+  }
+}
+
+function getLabel(height) {
+  if (height >= 2160) return `4K (${height}p)`;
+  if (height >= 1440) return `1440p`;
+  if (height >= 1080) return `1080p`;
+  if (height >= 720) return `720p`;
+  if (height >= 480) return `480p`;
+  if (height >= 360) return `360p`;
+  return `${height}p`;
 }
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:3000');
-
-  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   if (req.method === 'GET' && url.pathname === '/') {
@@ -27,45 +60,38 @@ const server = createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/formats') {
     let body = '';
     req.on('data', d => body += d);
-    req.on('end', () => {
-      const { url: videoUrl } = JSON.parse(body);
-      if (!videoUrl) { res.writeHead(400); return res.end('No URL'); }
+    req.on('end', async () => {
+      try {
+        const { url: videoUrl } = JSON.parse(body);
+        const videoId = extractVideoId(videoUrl);
+        if (!videoId) { res.writeHead(400); return res.end(JSON.stringify({ error: 'Invalid URL' })); }
 
-      const ytdlp = spawn('yt-dlp', [
-        '-J',
-        '--no-warnings',
-        '--no-playlist',
-        '--cookies', 'cookies.txt',
-        '--extractor-args', 'youtube:player_client=web',
-        videoUrl
-      ]);
-      let data = '';
+        const data = await getVideoInfo(videoId);
 
-      const timeout = setTimeout(() => {
-        ytdlp.kill();
-        res.writeHead(500);
-        res.end(JSON.stringify({ error: 'Timed out!' }));
-      }, 30000);
-
-      ytdlp.stdout.on('data', (d) => data += d);
-      ytdlp.stderr.on('data', (d) => console.log('STDERR:', d.toString()));
-
-      ytdlp.on('close', () => {
-        clearTimeout(timeout);
-        try {
-          const json = JSON.parse(data);
-          const videoFormats = json.formats
-            .filter(f => f.height && f.vcodec !== 'none' && f.url)
-            .sort((a, b) => b.height - a.height)
-            .filter((f, i, arr) => arr.findIndex(x => x.height === f.height) === i)
-            .map(f => ({ height: f.height, label: getLabel(f.height, f.ext.toUpperCase()), url: f.url }));
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ title: json.title, thumbnail: json.thumbnail, formats: videoFormats }));
-        } catch(e) {
+        if (!data.streamingData) {
           res.writeHead(500);
-          res.end(JSON.stringify({ error: e.message }));
+          return res.end(JSON.stringify({ error: 'No streaming data found. Video may be restricted.' }));
         }
-      });
+
+        const formats = [
+          ...(data.streamingData.formats || []),
+          ...(data.streamingData.adaptiveFormats || [])
+        ]
+          .filter(f => f.qualityLabel && f.url && f.mimeType?.includes('video/mp4'))
+          .sort((a, b) => (b.width || 0) - (a.width || 0))
+          .filter((f, i, arr) => arr.findIndex(x => x.qualityLabel === f.qualityLabel) === i)
+          .map(f => ({ label: f.qualityLabel, url: f.url }));
+
+        const title = data.videoDetails?.title || 'Unknown Title';
+        const thumbnail = data.videoDetails?.thumbnail?.thumbnails?.pop()?.url || '';
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ title, thumbnail, formats }));
+      } catch(e) {
+        console.error(e);
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: e.message }));
+      }
     });
     return;
   }
@@ -73,16 +99,5 @@ const server = createServer(async (req, res) => {
   res.writeHead(404);
   res.end('Not found');
 });
-
-function getLabel(height, ext) {
-  if (height >= 2160) return `4K - ${ext}`;
-  if (height >= 1440) return `1440p - ${ext}`;
-  if (height >= 1080) return `1080p - ${ext}`;
-  if (height >= 720) return `720p - ${ext}`;
-  if (height >= 480) return `480p - ${ext}`;
-  if (height >= 360) return `360p - ${ext}`;
-  if (height >= 240) return `240p - ${ext}`;
-  return `${height}p - ${ext}`;
-}
 
 server.listen(3000, () => console.log('✅ Running at http://localhost:3000'));
