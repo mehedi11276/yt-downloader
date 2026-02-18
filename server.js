@@ -1,32 +1,17 @@
 import { createServer } from 'http';
-import { readFile } from 'fs/promises';
+import { readFile, writeFile } from 'fs/promises';
+import { Innertube } from 'youtubei.js';
 
-const INNERTUBE_API_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
-const INNERTUBE_CLIENT = {
-  clientName: 'ANDROID',
-  clientVersion: '19.09.37',
-  androidSdkVersion: 30,
-  userAgent: 'com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip'
-};
-
-async function getVideoInfo(videoId) {
-  const res = await fetch(`https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': INNERTUBE_CLIENT.userAgent,
-      'X-YouTube-Client-Name': '3',
-      'X-YouTube-Client-Version': INNERTUBE_CLIENT.clientVersion,
-    },
-    body: JSON.stringify({
-      videoId,
-      context: {
-        client: INNERTUBE_CLIENT
-      }
-    })
-  });
-  return res.json();
+// Write cookies from env variable on startup
+if (process.env.COOKIES_BASE64) {
+  const buf = Buffer.from(process.env.COOKIES_BASE64, 'base64');
+  await writeFile('cookies.txt', buf);
+  console.log('✅ cookies.txt written from env, size:', buf.length, 'bytes');
+} else {
+  console.log('⚠️ No COOKIES_BASE64 env variable found!');
 }
+
+const yt = await Innertube.create({ retrieve_player: true });
 
 function extractVideoId(url) {
   try {
@@ -66,24 +51,25 @@ const server = createServer(async (req, res) => {
         const videoId = extractVideoId(videoUrl);
         if (!videoId) { res.writeHead(400); return res.end(JSON.stringify({ error: 'Invalid URL' })); }
 
-        const data = await getVideoInfo(videoId);
+        const info = await yt.getBasicInfo(videoId);
+        const streamingData = info.streaming_data;
 
-        if (!data.streamingData) {
+        if (!streamingData) {
           res.writeHead(500);
-          return res.end(JSON.stringify({ error: 'No streaming data found. Video may be restricted.' }));
+          return res.end(JSON.stringify({ error: 'No streaming data found.' }));
         }
 
         const formats = [
-          ...(data.streamingData.formats || []),
-          ...(data.streamingData.adaptiveFormats || [])
+          ...(streamingData.formats || []),
+          ...(streamingData.adaptive_formats || [])
         ]
-          .filter(f => f.qualityLabel && f.url && f.mimeType?.includes('video/mp4'))
-          .sort((a, b) => (b.width || 0) - (a.width || 0))
-          .filter((f, i, arr) => arr.findIndex(x => x.qualityLabel === f.qualityLabel) === i)
-          .map(f => ({ label: f.qualityLabel, url: f.url }));
+          .filter(f => f.height && f.url && f.mime_type?.includes('video/mp4'))
+          .sort((a, b) => b.height - a.height)
+          .filter((f, i, arr) => arr.findIndex(x => x.height === f.height) === i)
+          .map(f => ({ label: getLabel(f.height), url: f.url }));
 
-        const title = data.videoDetails?.title || 'Unknown Title';
-        const thumbnail = data.videoDetails?.thumbnail?.thumbnails?.pop()?.url || '';
+        const title = info.basic_info?.title || 'Unknown Title';
+        const thumbnail = info.basic_info?.thumbnail?.[0]?.url || '';
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ title, thumbnail, formats }));
