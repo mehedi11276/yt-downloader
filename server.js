@@ -20,7 +20,13 @@ const server = createServer(async (req, res) => {
       const { url: videoUrl } = JSON.parse(body);
       if (!videoUrl) { res.writeHead(400); return res.end('No URL'); }
 
-      const ytdlp = spawn('python', ['-m', 'yt_dlp', '-J', '--no-warnings', '--no-playlist', videoUrl]);
+      const ytdlp = spawn('yt-dlp', [
+        '-J',
+        '--no-warnings',
+        '--no-playlist',
+        '--extractor-args', 'youtube:player_client=android',
+        videoUrl
+      ]);
       let data = '';
 
       const timeout = setTimeout(() => {
@@ -62,12 +68,12 @@ const server = createServer(async (req, res) => {
       ? `bestvideo[height<=${height}]+bestaudio/best[height<=${height}]`
       : 'bestvideo+bestaudio';
 
-    const ytdlp = spawn('python', [
-      '-m', 'yt_dlp',
+    const ytdlp = spawn('yt-dlp', [
       '-f', format,
       '--no-warnings',
       '--no-playlist',
       '--merge-output-format', 'mp4',
+      '--extractor-args', 'youtube:player_client=android',
       '-o', tmpFile,
       videoUrl
     ]);
