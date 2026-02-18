@@ -32,7 +32,7 @@ const server = createServer(async (req, res) => {
 
       const ytdlp = spawn('yt-dlp', [
         '-J',
-        '--no-warnings',
+        '-v',
         '--no-playlist',
         '--cookies', 'cookies.txt',
         '--extractor-args', 'youtube:player_client=android',
