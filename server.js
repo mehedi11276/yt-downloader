@@ -11,7 +11,15 @@ if (process.env.COOKIES_BASE64) {
   console.log('⚠️ No COOKIES_BASE64 env variable found!');
 }
 
-const yt = await Innertube.create({ retrieve_player: true });
+console.log('🔄 Creating Innertube instance...');
+let yt;
+try {
+  yt = await Innertube.create({ retrieve_player: true });
+  console.log('✅ Innertube instance created!');
+} catch(e) {
+  console.error('❌ Failed to create Innertube instance:', e.message);
+  process.exit(1);
+}
 
 function extractVideoId(url) {
   try {
